@@ -29,7 +29,7 @@ static unsigned long mtime()
 
 int __res_msend_rc(int nqueries, const unsigned char *const *queries,
 	const int *qlens, unsigned char *const *answers, int *alens, int asize,
-	const struct resolvconf *conf)
+	int *nsend, int *nrecv, const struct resolvconf *conf)
 {
 	int fd;
 	int timeout, attempts, retry_interval, servfail_retry;
@@ -117,11 +117,15 @@ int __res_msend_rc(int nqueries, const unsigned char *const *queries,
 		if (t2-t1 >= retry_interval) {
 			/* Query all configured namservers in parallel */
 			for (i=0; i<nqueries; i++)
-				if (!alens[i])
-					for (j=0; j<nns; j++)
+				if (!alens[i]) {
+					nsend[i] = nrecv[i] = 0;
+					for (j=0; j<nns; j++) {
 						sendto(fd, queries[i],
 							qlens[i], MSG_NOSIGNAL,
 							(void *)&ns[j], sl);
+						nsend[i]++;
+					}
+				}
 			t1 = t2;
 			servfail_retry = 2 * nqueries;
 		}
@@ -144,6 +148,7 @@ int __res_msend_rc(int nqueries, const unsigned char *const *queries,
 				answers[next][0] != queries[i][0] ||
 				answers[next][1] != queries[i][1] ); i++);
 			if (i==nqueries) continue;
+			nrecv[i]++;
 			if (alens[i]) continue;
 
 			/* Only accept positive or negative responses;
@@ -151,13 +156,19 @@ int __res_msend_rc(int nqueries, const unsigned char *const *queries,
 			 * all other codes such as refusal. */
 			switch (answers[next][3] & 15) {
 			case 0:
+				break;
 			case 3:
+				/* In case of an NXDomain record, retry the next one
+				 * if available */
+				if (nrecv[i] < nsend[i]) continue;
 				break;
 			case 2:
-				if (servfail_retry && servfail_retry--)
+				if (servfail_retry && servfail_retry--) {
 					sendto(fd, queries[i],
 						qlens[i], MSG_NOSIGNAL,
 						(void *)&ns[j], sl);
+					nsend[i]++;
+				}
 			default:
 				continue;
 			}
@@ -180,9 +191,11 @@ out:
 }
 
 int __res_msend(int nqueries, const unsigned char *const *queries,
-	const int *qlens, unsigned char *const *answers, int *alens, int asize)
+	const int *qlens, unsigned char *const *answers, int *alens, int asize, 
+	int *nsend, int *nrecv)
 {
 	struct resolvconf conf;
 	if (__get_resolv_conf(&conf, 0, 0) < 0) return -1;
-	return __res_msend_rc(nqueries, queries, qlens, answers, alens, asize, &conf);
+	return __res_msend_rc(nqueries, queries, qlens, answers, alens, asize, 
+				nsend, nrecv, &conf);
 }

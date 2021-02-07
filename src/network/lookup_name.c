@@ -140,7 +140,7 @@ static int name_from_dns(struct address buf[static MAXADDRS], char canon[static 
 	unsigned char qbuf[2][280], abuf[2][512];
 	const unsigned char *qp[2] = { qbuf[0], qbuf[1] };
 	unsigned char *ap[2] = { abuf[0], abuf[1] };
-	int qlens[2], alens[2];
+	int qlens[2], alens[2], nsend[2], nrecv[2];
 	int i, nq = 0;
 	struct dpc_ctx ctx = { .addrs = buf, .canon = canon };
 	static const struct { int af; int rr; } afrr[2] = {
@@ -159,7 +159,7 @@ static int name_from_dns(struct address buf[static MAXADDRS], char canon[static 
 		}
 	}
 
-	if (__res_msend_rc(nq, qp, qlens, ap, alens, sizeof *abuf, conf) < 0)
+	if (__res_msend_rc(nq, qp, qlens, ap, alens, sizeof *abuf, nsend, nrecv, conf) < 0)
 		return EAI_SYSTEM;
 
 	for (i=0; i<nq; i++) {
